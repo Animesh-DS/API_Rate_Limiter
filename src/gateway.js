@@ -10,6 +10,7 @@ const logger = require('./utils/logger');
 const apiRoutes = require('./api/routes');
 // We will build the Socket.io logic in the next commit
 const { initSocket } = require('./sockets/realtime'); 
+const { initLoadShedder } = require('./workers/load-shedder');
 
 const app = express();
 const server = http.createServer(app);
@@ -33,6 +34,7 @@ app.use('/api', apiRoutes);
 
 // 4. Initialize Real-Time Sockets (Commented out until next step)
 initSocket(server);
+initLoadShedder();
 
 const PORT = process.env.PORT || 3000;
 
