@@ -5,12 +5,12 @@ const logger = require('../utils/logger');
 const initSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: '*', // Open for development testing
+      origin: '*', 
       methods: ['GET', 'POST']
     }
   });
 
-  // 1. Subscribe to the Redis channel where Workers will broadcast results
+  // 1. Subscribe to the Redis channel
   subscriber.subscribe('task-events', (err, count) => {
     if (err) {
       logger.error({ err }, 'Failed to subscribe to Redis task-events channel');
@@ -19,13 +19,11 @@ const initSocket = (server) => {
     }
   });
 
-  // 2. Listen for messages from the Workers and push to the specific client
+  // 2. Listen for messages from Workers and push to specific room
   subscriber.on('message', (channel, message) => {
     if (channel === 'task-events') {
       try {
         const event = JSON.parse(message);
-        
-        // Emit the event strictly to the room matching the correlationId
         io.to(event.correlationId).emit('task-completed', event);
         logger.info({ jobId: event.correlationId }, 'Pushed real-time update to client socket');
       } catch (error) {
@@ -38,8 +36,11 @@ const initSocket = (server) => {
   io.on('connection', (socket) => {
     logger.info({ socketId: socket.id }, 'New client socket connected');
 
-    // When the frontend receives the 202 Accepted, it sends the jobId here to listen for updates
+    // ALL socket.on events must go inside this block
     socket.on('subscribe-to-job', (correlationId) => {
+      // In a production environment with JWTs, you would validate the user here
+      // e.g., if (data.userId === decodedJwt.id)
+      
       socket.join(correlationId);
       logger.info({ socketId: socket.id, room: correlationId }, 'Client subscribed to job updates');
     });
@@ -49,13 +50,6 @@ const initSocket = (server) => {
     });
   });
 };
-
-socket.on('subscribe-to-job', (data) => {
-  // In production, validate data.signature against a JWT
-  if (data.userId === currentUserId) { 
-    socket.join(data.correlationId);
-  }
-});
 
 module.exports = {
   initSocket
