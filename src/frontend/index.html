@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Gateway QoS Demo</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Load Socket.io Client from CDN -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>API Rate Limiter & Queue Gateway</h1>
+      <p>Status: <span id="connection-status" class="disconnected">Connecting...</span></p>
+    </header>
+
+    <div class="control-panel">
+      <div class="input-group">
+        <label for="tier-select">Simulate User Tier:</label>
+        <select id="tier-select">
+          <option value="free">Free (10 req/min)</option>
+          <option value="standard">Standard (100 req/min)</option>
+          <option value="premium">Premium (1000 req/min)</option>
+        </select>
+      </div>
+
+      <div class="input-group">
+        <label for="request-count">Number of Requests (Spike):</label>
+        <input type="number" id="request-count" value="1" min="1" max="50">
+      </div>
+
+      <button id="send-btn" onclick="triggerTrafficSpike()">Send Task(s)</button>
+      <button id="clear-btn" onclick="clearConsole()" class="secondary">Clear Console</button>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-header">Real-Time System Log</div>
+      <div id="console-output" class="console-output"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

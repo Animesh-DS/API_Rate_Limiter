@@ -1,3 +1,4 @@
+const path = require('path');
 require('dotenv').config();
 const express = require('express');
 const pinoHttp = require('pino-http');
@@ -28,6 +29,9 @@ app.use(pinoHttp({
 
 // 2. Body parsing
 app.use(express.json());
+
+// Add this line to serve the frontend folder
+app.use('/', express.static(path.join(__dirname, 'frontend')));
 
 // 3. API Routing
 app.use('/api', apiRoutes);
