@@ -4,10 +4,12 @@ const pinoHttp = require('pino-http');
 const { v4: uuidv4 } = require('uuid');
 const http = require('http');
 
+
+
 const logger = require('./utils/logger');
 const apiRoutes = require('./api/routes');
 // We will build the Socket.io logic in the next commit
-// const { initSocket } = require('./sockets/realtime'); 
+const { initSocket } = require('./sockets/realtime'); 
 
 const app = express();
 const server = http.createServer(app);
@@ -30,7 +32,7 @@ app.use(express.json());
 app.use('/api', apiRoutes);
 
 // 4. Initialize Real-Time Sockets (Commented out until next step)
-// initSocket(server);
+initSocket(server);
 
 const PORT = process.env.PORT || 3000;
 
