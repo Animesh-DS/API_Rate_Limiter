@@ -1,49 +1,61 @@
-const ms = require('ms');
 const { connection } = require('../config/redis');
-const { SLIDING_WINDOW_LUA } = require('../utils/scripts');
 const logger = require('../utils/logger');
-
-// Register the Lua script in Redis so we can call it efficiently by name
-connection.defineCommand('slidingWindowRateLimit', {
-  numberOfKeys: 1,
-  lua: SLIDING_WINDOW_LUA,
-});
-
-const TIER_LIMITS = {
-  premium: { limit: 1000, window: ms('1m') },
-  standard: { limit: 100, window: ms('1m') },
-  free: { limit: 10, window: ms('1m') }
-};
+const { slidingWindowScript } = require('../utils/scripts');
 
 const rateLimiter = async (req, res, next) => {
-  const { userIdentifier, userTier } = req;
-  const config = TIER_LIMITS[userTier] || TIER_LIMITS['free'];
-  
-  const redisKey = `rate_limit:${userTier}:${userIdentifier}`;
-  const now = Date.now();
+  const { userTier, userIdentifier } = req;
+  const correlationId = req.id;
+
+  // 1. Resolve dynamic limits set by the Load Shedder, fallback to defaults
+  let limit = 10; // default free
+  if (userTier === 'premium') limit = 1000;
+  else if (userTier === 'standard') {
+    const dynamicLimit = await connection.get('dynamic_limit:standard');
+    limit = dynamicLimit ? parseInt(dynamicLimit, 10) : 100;
+  } else {
+    const dynamicLimit = await connection.get('dynamic_limit:free');
+    limit = dynamicLimit ? parseInt(dynamicLimit, 10) : 10;
+  }
+
+  const windowSize = 60000; // 1 minute window
+  const key = `ratelimit:${userTier}:${userIdentifier}`;
 
   try {
-    // Execute atomic Lua script
-    const allowed = await connection.slidingWindowRateLimit(
-      redisKey,
-      config.limit,
-      config.window,
-      now
+    // 2. Execute Lua Script
+    const currentRequests = await connection.eval(
+      slidingWindowScript,
+      1,
+      key,
+      limit,
+      windowSize
     );
 
-    if (allowed === 1) {
-      next();
-    } else {
-      logger.warn({ tier: userTier, identifier: userIdentifier }, 'Rate limit exceeded');
-      res.status(429).json({ 
+    const remaining = Math.max(0, limit - currentRequests);
+    
+    // Set informative standard headers
+    res.setHeader('X-RateLimit-Limit', limit);
+    res.setHeader('X-RateLimit-Remaining', remaining);
+
+    if (currentRequests > limit) {
+      // 3. Calculate Retry-After dynamically based on key TTL
+      const ttl = await connection.pttl(key);
+      const retryAfterSeconds = Math.max(1, Math.ceil(ttl / 1000));
+      
+      res.setHeader('Retry-After', retryAfterSeconds);
+      
+      logger.warn({ tier: userTier, correlationId, retryAfter: retryAfterSeconds }, 'Rate limit exceeded');
+      
+      return res.status(429).json({ 
         error: 'Too Many Requests', 
-        message: `Your ${userTier} tier limit is exhausted. Try again later.`
+        message: 'Rate limit sliding window exhausted.',
+        retryAfter: retryAfterSeconds
       });
     }
-  } catch (error) {
-    logger.error({ err: error }, 'Rate limiter failed, failing open');
-    // In production, if Redis fails, you usually "fail open" so legitimate users aren't blocked
+
     next();
+  } catch (error) {
+    logger.error({ err: error, correlationId }, 'Rate limiter failed, failing open');
+    next(); // Fail open so a Redis crash doesn't take down the API
   }
 };
 

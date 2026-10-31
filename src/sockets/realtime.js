@@ -50,6 +50,13 @@ const initSocket = (server) => {
   });
 };
 
+socket.on('subscribe-to-job', (data) => {
+  // In production, validate data.signature against a JWT
+  if (data.userId === currentUserId) { 
+    socket.join(data.correlationId);
+  }
+});
+
 module.exports = {
   initSocket
 };

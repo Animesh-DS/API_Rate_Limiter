@@ -2,6 +2,8 @@ const queues = require('../config/queues');
 const { connection } = require('../config/redis'); // <-- ADD THIS IMPORT
 const logger = require('../utils/logger');
 
+const tierPriorities = { premium: 1, standard: 5, free: 10 }; 
+
 const processTask = async (req, res) => {
   const { userTier, userIdentifier } = req;
   const correlationId = req.id; 
@@ -33,7 +35,8 @@ const processTask = async (req, res) => {
       userTier,
       correlationId
     }, {
-      jobId: correlationId 
+      jobId: correlationId,
+      priority: tierPriorities[userTier]
     });
 
     logger.info({ jobId: job.id, tier: userTier }, 'Job successfully queued');

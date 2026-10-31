@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 
 let isFreePaused = false;
 let isStandardPaused = false;
+let isThrottled = false; // Tracks the state of adaptive rate limiting
 
 // Helper to calculate CPU utilization percentage
 const getCpuUsage = () => {
@@ -26,7 +27,7 @@ const getCpuUsage = () => {
 let startMeasure = getCpuUsage();
 
 const initLoadShedder = () => {
-  logger.info('Dynamic Load Shedder initialized');
+  logger.info('Dynamic Load Shedder & Adaptive Limiter initialized');
 
   setInterval(async () => {
     const endMeasure = getCpuUsage();
@@ -35,29 +36,41 @@ const initLoadShedder = () => {
     startMeasure = endMeasure;
 
     const cpuPercentage = 100 - Math.floor((100 * idleDifference) / totalDifference);
-    
-    // Uncomment for debugging, but keep hidden in production to avoid log spam
-    // logger.debug({ cpu: `${cpuPercentage}%` }, 'System Metrics');
 
-    // 1. Level 1 Load Shedding: Drop Free Tier
-    if (cpuPercentage > 85 && !isFreePaused) {
-      logger.warn('CPU > 85% - Pausing FREE queue (Shedding Load)');
-      await freeQueue.pause();
-      await connection.set('circuit_breaker:free', 'paused', 'EX', 60); // Auto-expires as a failsafe
-      isFreePaused = true;
+    // 1. Level 1 Backpressure (CPU > 85%): Adaptive Limits + Drop Free Tier
+    if (cpuPercentage > 85 && !isThrottled) {
+      logger.warn('CPU > 85% - Applying backpressure (Dynamic Limits) & Pausing FREE queue');
+      
+      // Implement Adaptive Rate Limiting via Redis
+      await connection.set('dynamic_limit:standard', 50, 'EX', 60); // Drop to 50 req/min
+      await connection.set('dynamic_limit:free', 2, 'EX', 60);      // Drop to 2 req/min
+      isThrottled = true;
+
+      // Shed Background Load
+      if (!isFreePaused) {
+        await freeQueue.pause();
+        await connection.set('circuit_breaker:free', 'paused', 'EX', 60); // Auto-expires as a failsafe
+        isFreePaused = true;
+      }
     }
 
-    // 2. Level 2 Load Shedding: Drop Standard Tier
+    // 2. Level 2 Critical Load (CPU > 95%): Drop Standard Tier
     if (cpuPercentage > 95 && !isStandardPaused) {
-      logger.warn('CPU > 95% - Pausing STANDARD queue (Critical Load)');
+      logger.warn('CPU > 95% - Critical Load! Pausing STANDARD queue');
       await standardQueue.pause();
       await connection.set('circuit_breaker:standard', 'paused', 'EX', 60);
       isStandardPaused = true;
     }
 
-    // 3. System Recovery: Resume Queues
-    if (cpuPercentage < 70 && (isFreePaused || isStandardPaused)) {
-      logger.info('CPU < 70% - System stabilized. Resuming queues.');
+    // 3. System Recovery (CPU < 70%): Restore limits and resume queues
+    if (cpuPercentage < 70 && (isFreePaused || isStandardPaused || isThrottled)) {
+      logger.info('CPU < 70% - System stabilized. Resuming normal operations.');
+      
+      if (isThrottled) {
+        await connection.del('dynamic_limit:standard');
+        await connection.del('dynamic_limit:free');
+        isThrottled = false;
+      }
       
       if (isFreePaused) {
         await freeQueue.resume();

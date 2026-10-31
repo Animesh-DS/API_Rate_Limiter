@@ -7,7 +7,8 @@ const SLIDING_WINDOW_LUA = `
   local key = KEYS[1]
   local limit = tonumber(ARGV[1])
   local window = tonumber(ARGV[2])
-  local now = tonumber(ARGV[3])
+  local redis_time = redis.call('TIME')
+  local now = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
   local window_start = now - window
 
   redis.call('ZREMRANGEBYSCORE', key, 0, window_start)
