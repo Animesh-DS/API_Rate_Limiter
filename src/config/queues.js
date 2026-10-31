@@ -14,9 +14,10 @@ const queueOptions = {
   }
 };
 
-const premiumQueue = new Queue('queue:premium', queueOptions);
-const standardQueue = new Queue('queue:standard', queueOptions);
-const freeQueue = new Queue('queue:free', queueOptions);
+// Queue names changed from 'queue:tier' to 'tier' to comply with BullMQ v5+
+const premiumQueue = new Queue('premium', queueOptions);
+const standardQueue = new Queue('standard', queueOptions);
+const freeQueue = new Queue('free', queueOptions);
 
 module.exports = {
   premiumQueue,
